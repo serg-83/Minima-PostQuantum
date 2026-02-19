@@ -17,8 +17,6 @@ plugins {
     // shadowJar plugin to build fat jar
     id 'com.github.johnrengelman.shadow' version '6.1.0'
 
-	//Add docker build and publish
-    id 'com.palantir.docker' version '0.34.0'
 }
 
 sourceCompatibility = JavaVersion.VERSION_11
@@ -81,23 +79,6 @@ jar {
     }
 }
 
-docker {
-    name 'minimaglobal/minima:dev'
-    dockerfile project.file('docker/Dockerfile')
-    
-    //Remove this for a local build - this is cross platform
-    buildx true
-    push true
-    platform 'linux/amd64,linux/arm64,linux/arm/v7'
-    
-    //Other platfor formats
-    //platform 'amd64,arm32v7,arm64v8,windows-amd64'
-    
-    files tasks.shadowJar
-    copySpec.from("$buildDir/lib/minima-all.jar",).into(".")
-    copySpec.from("docker/minima.config").into(".")
-    copySpec.from("docker/minima").into(".")
-}
 
 /*test {
     dependsOn cleanTest
