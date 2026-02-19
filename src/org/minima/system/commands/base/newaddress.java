@@ -1,8 +1,12 @@
 package org.minima.system.commands.base;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+
 import org.minima.database.MinimaDB;
 import org.minima.database.wallet.ScriptRow;
 import org.minima.database.wallet.Wallet;
+import org.minima.objects.keys.SigningScheme;
 import org.minima.system.commands.Command;
 import org.minima.utils.json.JSONObject;
 

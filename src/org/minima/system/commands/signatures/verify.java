@@ -1,3 +1,4 @@
+WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 package org.minima.system.commands.signatures;
 
 import java.util.ArrayList;
@@ -5,6 +6,9 @@ import java.util.Arrays;
 
 import org.minima.objects.base.MiniData;
 import org.minima.objects.keys.Signature;
+import org.minima.objects.keys.SignatureProof;
+import org.minima.objects.keys.SigningScheme;
+import org.minima.objects.keys.SigningSchemeFactory;
 import org.minima.objects.keys.TreeKey;
 import org.minima.system.commands.Command;
 import org.minima.system.commands.CommandException;
@@ -58,12 +62,21 @@ public class verify extends Command {
 			throw new CommandException("Signature publickey is different : "+sigpubk.to0xString());
 		}
 		
-		//Create a signature scheme checker..
-		TreeKey tk = new TreeKey();
-		tk.setPublicKey(sig.getRootPublicKey());
-		
-		//And check the data..
-		boolean valid = tk.verify(data, sig);
+		//Check if this is a SPHINCS+ or WOTS signature
+		boolean valid;
+		SignatureProof firstProof = sig.getAllSignatureProofs().get(0);
+		int schemeType = firstProof.getSchemeType();
+
+		if (schemeType == SigningScheme.SCHEME_SPHINCS) {
+			//SPHINCS+ — verify directly, single proof level
+			valid = SigningSchemeFactory.verify(schemeType,
+				firstProof.getPublicKey(), data, firstProof.getSignature());
+		} else {
+			//WOTS — use TreeKey tree verification
+			TreeKey tk = new TreeKey();
+			tk.setPublicKey(sig.getRootPublicKey());
+			valid = tk.verify(data, sig);
+		}
 		
 		if(!valid) {
 

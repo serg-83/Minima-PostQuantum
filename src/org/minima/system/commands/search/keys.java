@@ -9,6 +9,8 @@ import org.minima.database.wallet.KeyRow;
 import org.minima.database.wallet.Wallet;
 import org.minima.objects.Address;
 import org.minima.objects.base.MiniData;
+import org.minima.objects.keys.SigningScheme;
+import org.minima.objects.keys.SigningSchemeFactory;
 import org.minima.objects.keys.TreeKey;
 import org.minima.system.commands.Command;
 import org.minima.system.commands.CommandException;
@@ -58,7 +60,7 @@ public class keys extends Command {
 	
 	@Override
 	public ArrayList<String> getValidParams(){
-		return new ArrayList<>(Arrays.asList(new String[]{"action","publickey","phrase","modifier"}));
+		return new ArrayList<>(Arrays.asList(new String[]{"action","publickey","phrase","modifier","scheme"}));
 	}
 	
 	@Override
@@ -157,24 +159,30 @@ public class keys extends Command {
 
 			//Now create a random private seed using the modifier
 			MiniData privseed 	= Crypto.getInstance().hashObjects(seed, modifier);
-			
-			//Make the TreeKey
-			TreeKey treekey 	= TreeKey.createDefault(privseed);
-			
+
+			//Check for scheme parameter (default: SPHINCS+)
+			String schemeName = getParam("scheme", "sphincs");
+			int schemeType = schemeName.equalsIgnoreCase("wots") || schemeName.equalsIgnoreCase("winternitz")
+				? SigningScheme.SCHEME_WINTERNITZ : SigningScheme.SCHEME_SPHINCS;
+
+			//Make the key using the scheme factory
+			SigningScheme scheme = SigningSchemeFactory.createScheme(schemeType, privseed);
+
 			//Now create a simple address..
-			String script = new String("RETURN SIGNEDBY("+treekey.getPublicKey()+")");
-			
+			String script = new String("RETURN SIGNEDBY("+scheme.getPublicKey()+")");
+
 			//Create the address
 			Address newaddress 	= new Address(script);
-			
+
 			JSONObject resp = new JSONObject();
 			resp.put("phrase", passphrase);
-			resp.put("privatekey", treekey.getPrivateKey().to0xString());
+			resp.put("privatekey", scheme.getPrivateKey().to0xString());
 			resp.put("modifier", 0);
-			resp.put("publickey", treekey.getPublicKey().to0xString());
+			resp.put("publickey", scheme.getPublicKey().to0xString());
 			resp.put("script", script);
 			resp.put("address", newaddress.getAddressData().to0xString());
 			resp.put("miniaddress", Address.makeMinimaAddress(newaddress.getAddressData()));
+			resp.put("scheme", schemeType == SigningScheme.SCHEME_SPHINCS ? "SPHINCS+" : "WINTERNITZ");
 
 			//Put the details in the response..
 			ret.put("response", resp);
@@ -193,9 +201,10 @@ public class keys extends Command {
 			int wrong		= 0;
 					
 			for(KeyRow kr : keys) {
-				TreeKey tk = new TreeKey( new MiniData(kr.getPrivateKey()), kr.getSize(), kr.getDepth());
+				SigningScheme scheme = SigningSchemeFactory.restoreScheme(
+					kr.getSchemeType(), new MiniData(kr.getPrivateKey()), kr.getSize(), kr.getDepth());
 				MiniData pubk 		= new MiniData(kr.getPublicKey());
-				MiniData actualkey 	= tk.getPublicKey();
+				MiniData actualkey 	= scheme.getPublicKey();
 				if(!pubk.isEqual(actualkey)) {
 					MinimaLogger.log("[!] INCORRECT Public key : "+pubk+" / "+actualkey);
 					wrong++;
@@ -229,19 +238,20 @@ public class keys extends Command {
 	public static boolean checkKey(String zPublicKey) {
 		MiniData pubkey = new MiniData(zPublicKey);
 		KeyRow kr 		= MinimaDB.getDB().getWallet().getKeyFromPublic(zPublicKey);
-		
+
 		//Check this keys private key is correct - hash(Seed+Mod)
 		if(!MinimaDB.getDB().getWallet().checkSingleKey(kr.getPrivateKey(), kr.getModifier())) {
 			return false;
 		}
-		
-		//Check the address
-		TreeKey tk = new TreeKey( new MiniData(kr.getPrivateKey()), kr.getSize(), kr.getDepth());
-		MiniData actualkey 	= tk.getPublicKey();
+
+		//Check the address — use correct scheme
+		SigningScheme scheme = SigningSchemeFactory.restoreScheme(
+			kr.getSchemeType(), new MiniData(kr.getPrivateKey()), kr.getSize(), kr.getDepth());
+		MiniData actualkey 	= scheme.getPublicKey();
 		if(!pubkey.isEqual(actualkey)) {
 			return false;
 		}
-		
+
 		return true;
 	}
 	

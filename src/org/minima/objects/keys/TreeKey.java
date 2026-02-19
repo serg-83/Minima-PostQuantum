@@ -192,13 +192,16 @@ public class TreeKey {
 		}
 		
 		for(int depth=0;depth<total;depth++) {
-			
+
 			//Get the signature
 			SignatureProof sigproof = zSignature.getAllSignatureProofs().get(depth);
-			
+
+			// Определяем тип схемы из SignatureProof
+			int schemeType = sigproof.getSchemeType();
+
 			//Check this root public key is the one we need
 			if(depth == 0) {
-				
+
 				//Check this is the MAIN public Key
 				if(!sigproof.getRootPublicKey().isEqual(mPublicKey)) {
 					return false;
@@ -207,17 +210,19 @@ public class TreeKey {
 
 			//Is this the last Signature
 			if(depth == total-1) {
-				
+
 				//The LAST signature signs the actual DATA
-				return Winternitz.verify(sigproof.getPublicKey(), zData, sigproof.getSignature());
-				
+				return SigningSchemeFactory.verify(schemeType,
+					sigproof.getPublicKey(), zData, sigproof.getSignature());
+
 			}else {
-				
+
 				//Any Signature but the last signs the child root public key
 				SignatureProof childsig = zSignature.getAllSignatureProofs().get(depth+1);
-				
+
 				//Check this is what is signed..
-				if(!Winternitz.verify(sigproof.getPublicKey(), childsig.getRootPublicKey(), sigproof.getSignature())) {
+				if(!SigningSchemeFactory.verify(schemeType,
+					sigproof.getPublicKey(), childsig.getRootPublicKey(), sigproof.getSignature())) {
 					return false;
 				}
 			}
