@@ -1,4 +1,3 @@
-WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 package org.minima.database.wallet;
 
 import java.math.BigInteger;

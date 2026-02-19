@@ -1,4 +1,3 @@
-WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 package org.minima.objects.keys;
 
 import org.minima.database.mmr.MMRProof;

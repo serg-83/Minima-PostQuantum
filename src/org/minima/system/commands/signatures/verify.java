@@ -1,4 +1,3 @@
-WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 package org.minima.system.commands.signatures;
 
 import java.util.ArrayList;
