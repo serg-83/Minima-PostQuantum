@@ -1,8 +1,8 @@
 package org.minima.objects.keys;
 
 import org.bouncycastle.crypto.digests.SHA3Digest;
-import org.bouncycastle.pqc.crypto.gmss.util.WinternitzOTSVerify;
-import org.bouncycastle.pqc.crypto.gmss.util.WinternitzOTSignature;
+import org.bouncycastle.pqc.legacy.crypto.gmss.util.WinternitzOTSVerify;
+import org.bouncycastle.pqc.legacy.crypto.gmss.util.WinternitzOTSignature;
 import org.minima.objects.base.MiniData;
 
 public class Winternitz {

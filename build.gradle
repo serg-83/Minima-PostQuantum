@@ -33,6 +33,7 @@ dependencies {
 	implementation 'org.mozilla:rhino:1.7.14'
     implementation 'com.h2database:h2:2.1.214'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.78.1'
     implementation 'org.bouncycastle:bcutil-jdk18on:1.78.1'
  	implementation "mysql:mysql-connector-java:8.0.26"
 }
@@ -64,7 +65,7 @@ tasks.withType(AbstractArchiveTask) {
 compileJava {
 	sourceCompatibility = '1.8'
     targetCompatibility = '1.8'
-    //options.compilerArgs << '-something'
+    options.encoding = 'ISO-8859-1'
 }
 
 application {
