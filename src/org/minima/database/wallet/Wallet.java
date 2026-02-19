@@ -1,3 +1,4 @@
+WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 package org.minima.database.wallet;
 
 import java.math.BigInteger;
@@ -12,6 +13,8 @@ import java.util.Random;
 import org.minima.objects.Address;
 import org.minima.objects.base.MiniData;
 import org.minima.objects.keys.Signature;
+import org.minima.objects.keys.SigningScheme;
+import org.minima.objects.keys.SigningSchemeFactory;
 import org.minima.objects.keys.TreeKey;
 import org.minima.system.commands.send.multisig;
 import org.minima.system.params.GeneralParams;
@@ -112,7 +115,8 @@ public class Wallet extends SqlDB {
 						+ "  `maxuses` bigint NOT NULL,"
 						+ "  `modifier` varchar(80) NOT NULL,"
 						+ "  `privatekey` varchar(80) NOT NULL,"
-						+ "  `publickey` varchar(80) NOT NULL"
+						+ "  `publickey` varchar(80) NOT NULL,"
+						+ "  `schemetype` int NOT NULL DEFAULT 0"
 						+ ")";
 		
 		//Run it..
@@ -146,7 +150,7 @@ public class Wallet extends SqlDB {
 		stmt.close();
 		
 		//KEY functions
-		SQL_CREATE_PUBLIC_KEY 			= mSQLConnection.prepareStatement("INSERT IGNORE INTO keys ( size, depth, uses, maxuses, modifier, privatekey, publickey ) VALUES ( ?, ?, ?, ? ,? ,? ,? )");
+		SQL_CREATE_PUBLIC_KEY 			= mSQLConnection.prepareStatement("INSERT IGNORE INTO keys ( size, depth, uses, maxuses, modifier, privatekey, publickey, schemetype ) VALUES ( ?, ?, ?, ? ,? ,? ,? ,? )");
 		SQL_GET_ALL_KEYS				= mSQLConnection.prepareStatement("SELECT * FROM keys");
 		SQL_GET_KEY						= mSQLConnection.prepareStatement("SELECT * FROM keys WHERE publickey=?");
 		SQL_UPDATE_KEY_USES				= mSQLConnection.prepareStatement("UPDATE keys SET uses=? WHERE publickey=?");
@@ -495,55 +499,60 @@ public class Wallet extends SqlDB {
 	 * Create a NEW key
 	 */
 	public synchronized KeyRow createNewKey() {
-		
+		return createNewKey(SigningScheme.SCHEME_SPHINCS);
+	}
+
+	public synchronized KeyRow createNewKey(int zSchemeType) {
+
 		//Check we can create new keys
 		if(!isBaseSeedAvailable()) {
 			throw new IllegalArgumentException("KeysDB LOCKED. No More Keys Allowed. Base SEED missing..");
 		}
-		
+
 		//Create a random modifier..
 		int numkeys 		= mAllKeys.size();
 		MiniData modifier 	= new MiniData(new BigInteger(Integer.toString(numkeys)));
 
 		//Now create a random private seed using the modifier
 		MiniData privseed 	= Crypto.getInstance().hashObjects(new MiniData(mBaseSeed.getSeed()), modifier);
-		
-		//Make the TreeKey
-		TreeKey treekey 	= TreeKey.createDefault(privseed);
-		
+
+		//Make the key using the scheme factory (SPHINCS+ по умолчанию)
+		SigningScheme scheme = SigningSchemeFactory.createScheme(zSchemeType, privseed);
+
 		//Now put all this in the DB
 		try {
-			
+
 			//Get the Query ready
 			SQL_CREATE_PUBLIC_KEY.clearParameters();
-		
+
 			//Set main params
-			SQL_CREATE_PUBLIC_KEY.setInt(1, treekey.getSize()); // FOR NOW.. not based off seed phrase
-			SQL_CREATE_PUBLIC_KEY.setInt(2, treekey.getDepth());
-			SQL_CREATE_PUBLIC_KEY.setInt(3, treekey.getUses());
-			SQL_CREATE_PUBLIC_KEY.setInt(4, treekey.getMaxUses());
-			
-			//NULL Modifier for now..
+			SQL_CREATE_PUBLIC_KEY.setInt(1, scheme.getSize());
+			SQL_CREATE_PUBLIC_KEY.setInt(2, scheme.getDepth());
+			SQL_CREATE_PUBLIC_KEY.setInt(3, scheme.getUses());
+			SQL_CREATE_PUBLIC_KEY.setInt(4, scheme.getMaxUses());
+
+			//Modifier
 			SQL_CREATE_PUBLIC_KEY.setString(5, modifier.to0xString());
-			
-			SQL_CREATE_PUBLIC_KEY.setString(6, treekey.getPrivateKey().to0xString());
-			SQL_CREATE_PUBLIC_KEY.setString(7, treekey.getPublicKey().to0xString());
-			
+
+			SQL_CREATE_PUBLIC_KEY.setString(6, scheme.getPrivateKey().to0xString());
+			SQL_CREATE_PUBLIC_KEY.setString(7, scheme.getPublicKey().to0xString());
+			SQL_CREATE_PUBLIC_KEY.setInt(8, zSchemeType);
+
 			//Do it.
 			SQL_CREATE_PUBLIC_KEY.execute();
-			
+
 			//Add this Key to our Cache List
-			mAllKeys.add(treekey.getPublicKey().to0xString());
-			
-			return new KeyRow(	treekey.getSize(), treekey.getDepth(), 
-								treekey.getUses(), treekey.getMaxUses(), "0x00", 
-								treekey.getPrivateKey().to0xString(), 
-								treekey.getPublicKey().to0xString());
-			
+			mAllKeys.add(scheme.getPublicKey().to0xString());
+
+			return new KeyRow(	scheme.getSize(), scheme.getDepth(),
+								scheme.getUses(), scheme.getMaxUses(), modifier.to0xString(),
+								scheme.getPrivateKey().to0xString(),
+								scheme.getPublicKey().to0xString(), zSchemeType);
+
 		} catch (SQLException e) {
 			MinimaLogger.log(e);
 		}
-		
+
 		return null;
 	}
 	
@@ -816,21 +825,22 @@ public class Wallet extends SqlDB {
 				return null;
 			}
 			
-			//Create a new TreeKey
-			TreeKey tk = new TreeKey(new MiniData(key.getPrivateKey()), key.getSize(), key.getDepth());
-			
+			//Restore the signing scheme from DB
+			SigningScheme scheme = SigningSchemeFactory.restoreScheme(
+				key.getSchemeType(), new MiniData(key.getPrivateKey()), key.getSize(), key.getDepth());
+
 			//How many times has this been used.. get from DB
 			int uses = key.getUses();
-			
+
 			//Set this..
-			tk.setUses(uses);
-			
+			scheme.setUses(uses);
+
 			//Now we have the Key..
-			Signature signature = tk.sign(zData);
-			
+			Signature signature = scheme.sign(zData);
+
 			//Update the DB..
-			uses = tk.getUses();
-			
+			uses = scheme.getUses();
+
 			//Update the DB..
 			updateUses(uses, key.getPublicKey());
 			
