@@ -174,8 +174,16 @@ public class P2PFunctions {
 
         List<NIOClientInfo> clients = getAllConnections();
         for (NIOClientInfo client : clients) {
-            if (!client.isConnected() && client.getHost().equals(zHost) && client.getPort() == zPort) {
-                MinimaLogger.log("Check connect failed already attempting to connect too:" + zHost + ":" + zPort);
+            //Check BOTH pending AND already connected — by host:port
+            //Проверяем И pending И уже подключённые — по host:port
+            if (client.getHost().equals(zHost) && client.getPort() == zPort) {
+                MinimaLogger.log("Check connect failed — already connected or connecting to:" + zHost + ":" + zPort);
+                return false;
+            }
+            //Also check by IP only for connected clients — prevent multiple connections to same IP
+            //Также проверяем по IP для подключённых — предотвращаем множественные соединения к одному IP
+            if (client.isConnected() && client.getHost().equals(zHost)) {
+                MinimaLogger.log("Check connect failed — already have connection to IP:" + zHost + " (existing port:" + client.getPort() + ", new port:" + zPort + ")");
                 return false;
             }
         }

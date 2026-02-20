@@ -21,15 +21,21 @@ import org.minima.utils.messages.MessageProcessor;
 public class NIOServer implements Runnable {
 
 	public static boolean mTraceON = false;
-	
+
+	/**
+	 * Max connections allowed from a single IP address
+	 * Максимум соединений с одного IP-адреса
+	 */
+	public static final int MAX_CONNECTIONS_PER_IP = 3;
+
 	MessageProcessor mNIOManager;
-	
+
 	int mPort;
-	
+
 	Selector mSelector;
-	
+
 	boolean mShutDown;
-	
+
 	ConcurrentHashMap<String, NIOClient> mClients = new ConcurrentHashMap<>();
 	
 	ArrayList<SocketChannel> mRegisterChannels;
@@ -307,7 +313,25 @@ public class NIOServer implements Runnable {
 	private void addChannel(boolean zIncoming, SocketChannel zSocketChannel) throws IOException {
 		// You can get the IPV6  Address (if available) of the connected user like so:
         String ipAddress = zSocketChannel.socket().getInetAddress().getHostAddress();
-        
+
+        //Check per-IP connection limit — reject if too many from same IP
+        //Проверяем лимит соединений с одного IP — отклоняем если слишком много
+        if(zIncoming) {
+        	int ipCount = 0;
+        	Enumeration<NIOClient> existing = mClients.elements();
+        	while(existing.hasMoreElements()) {
+        		NIOClient ec = existing.nextElement();
+        		if(ec != null && ipAddress.equals(ec.getHost())) {
+        			ipCount++;
+        		}
+        	}
+        	if(ipCount >= MAX_CONNECTIONS_PER_IP) {
+        		MinimaLogger.log("[NIOServer] Rejecting connection from "+ipAddress+" — per-IP limit reached ("+ipCount+"/"+MAX_CONNECTIONS_PER_IP+")");
+        		zSocketChannel.close();
+        		return;
+        	}
+        }
+
         // We also want this socket to be non-blocking so we don't need to follow the thread-per-socket model
         zSocketChannel.configureBlocking(false);
         zSocketChannel.setOption(StandardSocketOptions.TCP_NODELAY, true);
@@ -315,7 +339,7 @@ public class NIOServer implements Runnable {
 
         // Let's also register this socket to our selector:
         SelectionKey selectionkey = zSocketChannel.register(mSelector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
-        
+
         // Initially - We are only interested in events for reads for our selector.
         selectionkey.interestOps(SelectionKey.OP_READ);
 

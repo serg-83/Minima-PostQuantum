@@ -7,6 +7,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.zip.GZIPOutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.channels.SocketChannel;
@@ -781,16 +782,9 @@ public class NIOManager extends MessageProcessor {
 							+conn.getUID()+" disconnect/reconnect incoming:"
 							+conn.isIncoming()+" valid:"+conn.isValidGreeting()+" host:"+conn.getFullAddress());
 					
-					//Disconnect
+					//Disconnect — NIO_DISCONNECTED will handle reconnect, no separate NIO_CONNECT needed
+					//Дисконнект — NIO_DISCONNECTED сам обработает реконнект, отдельный NIO_CONNECT не нужен
 					disconnect(conn.getUID());
-					
-					//And reconnect in 5 secs if outgoing.. incoming will reconnect anyway
-					if(!conn.isIncoming() && conn.isValidGreeting()) {
-						TimerMessage timedconnect = new TimerMessage(5000, NIO_CONNECT);
-						timedconnect.addString("host", conn.getHost());
-						timedconnect.addInteger("port", conn.getPort());
-						PostTimerMessage(timedconnect);
-					}
 				}
 			}
 			
@@ -995,39 +989,75 @@ public class NIOManager extends MessageProcessor {
 		}catch(Exception exc) {}
 	}
 	
+	/**
+	 * Minimum size for compression (1KB) / Минимальный размер для сжатия
+	 */
+	public static final int COMPRESS_MIN_SIZE = 1024;
+
 	public static MiniData createNIOMessage(MiniByte zType, Streamable zObject) throws IOException {
-		
+
 		try {
-			//Create a stream to write to
+			//Create a stream to write to — serialize the original message
+			//Сериализуем оригинальное сообщение
 			ByteArrayOutputStream baos 	= new ByteArrayOutputStream();
 			DataOutputStream dos 		= new DataOutputStream(baos);
-			
+
 			//write the type
 			zType.writeDataStream(dos);
-			
+
 			//Write the Object
 			zObject.writeDataStream(dos);
-			
+
 			//Flush it..
 			dos.flush();
-			
+
 			//Convert to byte array
 			byte[] bb = baos.toByteArray();
-			
+
 			//Close all..
 			dos.close();
 			baos.close();
-			
+
+			//Compress if larger than 1KB — wrap in MSG_COMPRESSED
+			//Сжимаем если больше 1КБ — оборачиваем в MSG_COMPRESSED
+			if(bb.length > COMPRESS_MIN_SIZE) {
+
+				//GZIP compress the original message bytes
+				ByteArrayOutputStream compBaos = new ByteArrayOutputStream();
+				GZIPOutputStream gzos = new GZIPOutputStream(compBaos);
+				gzos.write(bb);
+				gzos.close();
+				byte[] compressed = compBaos.toByteArray();
+
+				//Only use compression if it actually reduces size
+				//Используем сжатие только если оно реально уменьшает размер
+				if(compressed.length < bb.length) {
+					ByteArrayOutputStream wrapBaos = new ByteArrayOutputStream();
+					DataOutputStream wrapDos = new DataOutputStream(wrapBaos);
+
+					//Write MSG_COMPRESSED type
+					NIOMessage.MSG_COMPRESSED.writeDataStream(wrapDos);
+
+					//Write the compressed data as MiniData
+					new MiniData(compressed).writeDataStream(wrapDos);
+
+					wrapDos.flush();
+					bb = wrapBaos.toByteArray();
+					wrapDos.close();
+					wrapBaos.close();
+				}
+			}
+
 			//request it..
 			MiniData data = new MiniData(bb);
-			
+
 			return data;
-			
+
 		}catch(OutOfMemoryError oom ) {
 			oom.printStackTrace();
 			MinimaLogger.log("OUT OF MEMORY.. on create NIOMsssage:"+NIOMessage.convertMessageType(zType));
 		}
-		
+
 		throw new IOException("Out Of Memory..");
 		
 //		//Create a stream to write to

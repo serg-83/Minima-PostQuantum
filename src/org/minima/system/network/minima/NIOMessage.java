@@ -1,8 +1,10 @@
 package org.minima.system.network.minima;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.util.zip.GZIPInputStream;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.ArrayList;
@@ -95,6 +97,12 @@ public class NIOMessage implements Runnable {
 	
 	public static final MiniByte MSG_MEGAMMRSYNC_REQ 	= new MiniByte(22);
 	public static final MiniByte MSG_MEGAMMRSYNC_RESP 	= new MiniByte(23);
+
+	/**
+	 * Compressed message wrapper — contains GZIP-compressed original message
+	 * Сжатое сообщение — содержит GZIP-сжатое оригинальное сообщение
+	 */
+	public static final MiniByte MSG_COMPRESSED 		= new MiniByte(99);
 	
 	/**
 	 * Helper function that converts to String 
@@ -150,8 +158,10 @@ public class NIOMessage implements Runnable {
 			return "TXBLOCK";
 		}else if(zType.isEqual(MSG_TXBLOCKMINE)) {
 			return "TXBLOCKMINE";
+		}else if(zType.isEqual(MSG_COMPRESSED)) {
+			return "COMPRESSED";
 		}
-		
+
 		return "UNKNOWN_"+zType.toString();
 	}
 	
@@ -224,7 +234,34 @@ public class NIOMessage implements Runnable {
 		try {
 			//What Type..
 			MiniByte type = MiniByte.ReadFromStream(dis);
-			
+
+			//Is this a compressed message? Decompress and re-read the real type
+			//Сжатое сообщение? Распаковываем и читаем реальный тип
+			if(type.isEqual(MSG_COMPRESSED)) {
+				//Read the compressed data
+				MiniData compressedData = MiniData.ReadFromStream(dis);
+				byte[] compBytes = compressedData.getBytes();
+
+				//Decompress via GZIP
+				ByteArrayInputStream compBais = new ByteArrayInputStream(compBytes);
+				GZIPInputStream gzis = new GZIPInputStream(compBais);
+				ByteArrayOutputStream decompBaos = new ByteArrayOutputStream();
+				byte[] buffer = new byte[8192];
+				int len;
+				while((len = gzis.read(buffer)) != -1) {
+					decompBaos.write(buffer, 0, len);
+				}
+				gzis.close();
+
+				//Replace streams with decompressed data
+				data = decompBaos.toByteArray();
+				bais = new ByteArrayInputStream(data);
+				dis  = new DataInputStream(bais);
+
+				//Read the REAL message type
+				type = MiniByte.ReadFromStream(dis);
+			}
+
 			//Are we syncing an IBD
 			if(Main.getInstance().isSyncIBD()) {
 				if(type.isEqual(MSG_TXPOWID) || type.isEqual(MSG_TXBLOCKID) || type.isEqual(MSG_PULSE)) {
