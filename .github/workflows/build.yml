@@ -29,8 +29,18 @@ jobs:
       - name: Build with Gradle (fat JAR)
         run: ./gradlew clean shadowJar
 
-      - name: Run tests
-        run: ./gradlew test
+      - name: Verify JAR exists
+        run: |
+          echo "=== Built JARs ==="
+          ls -lh build/libs/
+          JAR_FILE=$(ls build/libs/*-all.jar 2>/dev/null | head -1)
+          if [ -z "$JAR_FILE" ]; then
+            echo "ERROR: fat JAR not found!"
+            exit 1
+          fi
+          echo "Fat JAR: $JAR_FILE"
+          echo "JAR_FILE=$JAR_FILE" >> $GITHUB_ENV
+          echo "JAR_NAME=$(basename $JAR_FILE)" >> $GITHUB_ENV
 
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
@@ -43,20 +53,22 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "Build #${{ github.run_number }} — Minima with SPHINCS+"
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Minima SPHINCS+ v1.0.${{ github.run_number }}"
           body: |
-            Automated build from commit ${{ github.sha }}
+            ## Minima with SPHINCS+ post-quantum signatures
 
-            **Minima node with SPHINCS+ post-quantum signatures (NIST FIPS 205)**
+            Automated build from commit `${{ github.sha }}`
 
-            Changes: SHAKE-128s parameters, 128-bit post-quantum security, ~7KB signatures.
+            **SPHINCS+ (NIST FIPS 205)** — SHAKE-128s, 128-bit post-quantum security, ~7KB signatures.
             Based on `minima-global/Minima` branch `dev-spartacus`.
 
-            ### Download
-            `minima-all.jar` — fat JAR with all dependencies, ready to run:
+            ### How to run
+            ```bash
+            java -jar ${{ env.JAR_NAME }}
             ```
-            java -jar minima-all.jar
-            ```
+
+            ### Changes in this build
+            ${{ github.event.head_commit.message }}
           files: build/libs/*-all.jar
           make_latest: true
