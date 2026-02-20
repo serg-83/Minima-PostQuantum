@@ -55,7 +55,7 @@ public class SphincsScheme implements SigningScheme {
 		// Это корректно, т.к. SPHINCS+ подпись содержит только один уровень.
 		MMRProof emptyProof = new MMRProof();
 
-		SignatureProof sigProof = new SignatureProof(pubKey, sigData, emptyProof);
+		SignatureProof sigProof = new SignatureProof(pubKey, sigData, emptyProof, SigningScheme.SCHEME_SPHINCS);
 
 		Signature signature = new Signature();
 		signature.addSignatureProof(sigProof);
