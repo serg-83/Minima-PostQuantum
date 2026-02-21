@@ -35,7 +35,13 @@ public class TimerProcessor implements Runnable {
 	 * All the timed messages
 	 */
 	private ArrayList<TimerMessage> mTimerMessages;
-	
+
+	/**
+	 * Reusable temp list to avoid allocation every second
+	 * Переиспользуемый временный список для избежания аллокации каждую секунду
+	 */
+	private ArrayList<TimerMessage> mTempMessages;
+
 	/**
 	 * Synchronization lock for mTimerMessages
 	 */
@@ -44,10 +50,9 @@ public class TimerProcessor implements Runnable {
 	private TimerProcessor() {
 		mRunning 		= true;
 		mTimerMessages 	= new ArrayList<TimerMessage>();
+		mTempMessages	= new ArrayList<TimerMessage>();
 		mMessagesLock	= new Object();
-		
-		mMessagesLock = new Object();
-		
+
 		mMainThread = new Thread(this);
 		mMainThread.start();
 	}
@@ -99,26 +104,27 @@ public class TimerProcessor implements Runnable {
 			
 			//Check the stack for messages..
 			synchronized (mMessagesLock) {
-				//New list to store the ongoing timers
-				ArrayList<TimerMessage> newlist = new ArrayList<TimerMessage>();
-				
+				//Reuse temp list instead of allocating new one every second
+				//Переиспользуем временный список вместо создания нового каждую секунду
+				mTempMessages.clear();
+
 				//Current time
 				long time = System.currentTimeMillis();
-				
+
 				//Cycle through all the timers
 				for(TimerMessage tm : mTimerMessages) {
-					
+
 					//Check for null... strange internittent BUG..
 					if(tm == null) {
 						MinimaLogger.log("Timer Message is NULL.. ?");
 						continue;
 					}
-					
+
 					//Get the time..
 					if(tm.getTimer()<time) {
 						//Who get's it
 						MessageProcessor process = tm.getProcessor();
-						
+
 						//And Post..
 						if(process.isRunning()) {
 							process.PostMessage(tm);
@@ -127,12 +133,14 @@ public class TimerProcessor implements Runnable {
 						}
 					}else {
 						//Keep for next test
-						newlist.add(tm);
+						mTempMessages.add(tm);
 					}
 				}
-				
-				//Swap lists.
-				mTimerMessages = newlist;
+
+				//Swap lists and reuse
+				ArrayList<TimerMessage> swap = mTimerMessages;
+				mTimerMessages = mTempMessages;
+				mTempMessages = swap;
 			}
 			
 			//Small sleep.. 

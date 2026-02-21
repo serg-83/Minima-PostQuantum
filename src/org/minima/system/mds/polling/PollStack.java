@@ -1,5 +1,6 @@
 package org.minima.system.mds.polling;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 
 import org.minima.objects.base.MiniData;
@@ -14,13 +15,13 @@ public class PollStack {
 	
 	int mCounter;
 	
-	ArrayList<PollMessage> mMessages;
+	ArrayDeque<PollMessage> mMessages;
 	
 	//On Shutdown - only send the shutdown message.. ignore the others..
 	boolean mOnlyShutDown = false;
 	
 	public PollStack() {
-		mMessages 		= new ArrayList<>();
+		mMessages 		= new ArrayDeque<>();
 		mCounter 		= 0;
 		mSeries 		= MiniData.getRandomData(32).to0xString();
 	}
@@ -52,13 +53,10 @@ public class PollStack {
 		//Add it to our stack..
 		mMessages.add(msg);
 		
-		//Remove some if stack too big..
-		int size = mMessages.size();
-		if(size > MAX_MESSAGES) {
-			int trim = size - MAX_MESSAGES;
-			for(int i=0;i<trim;i++) {
-				mMessages.remove(0);
-			}
+		//Remove some if stack too big — O(1) per removal with ArrayDeque
+		//Удаление лишних — O(1) на каждое удаление с ArrayDeque
+		while(mMessages.size() > MAX_MESSAGES) {
+			mMessages.pollFirst();
 		}
 	}
 	

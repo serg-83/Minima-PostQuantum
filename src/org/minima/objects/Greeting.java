@@ -40,6 +40,12 @@ public class Greeting implements Streamable {
 	MiniNumber mTopBlock = MiniNumber.ZERO;
 	
 	/**
+	 * Max chain length in greeting to prevent memory exhaustion attacks
+	 * Максимальная длина цепочки в greeting для защиты от атак переполнения памяти
+	 */
+	public static final int MAX_CHAIN_LENGTH = 4096;
+
+	/**
 	 * The hash chain of the txpow in the current chain - from top down to root of Tree
 	 */
 	ArrayList<MiniData> mChain = new ArrayList<>();
@@ -180,6 +186,9 @@ public class Greeting implements Streamable {
 		
 		mChain = new ArrayList<>();
 		int len = MiniNumber.ReadFromStream(zIn).getAsInt();
+		if(len > MAX_CHAIN_LENGTH) {
+			throw new IOException("Greeting chain length "+len+" exceeds max "+MAX_CHAIN_LENGTH);
+		}
 		for(int i=0;i<len;i++) {
 			mChain.add(MiniData.ReadFromStream(zIn));
 		}

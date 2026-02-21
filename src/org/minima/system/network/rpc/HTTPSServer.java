@@ -3,6 +3,9 @@ package org.minima.system.network.rpc;
 import java.io.IOException;
 import java.net.BindException;
 import java.security.KeyStore;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
@@ -18,9 +21,17 @@ import org.minima.utils.ssl.SSLManager;
  
 public abstract class HTTPSServer extends Server implements Runnable {
     
+	/**
+	 * Max concurrent HTTPS handler threads to prevent thread exhaustion DoS
+	 * Максимум одновременных HTTPS-потоков для защиты от DoS через исчерпание потоков
+	 */
+	private static final int MAX_HANDLER_THREADS = 16;
+
 	private boolean mShutdown 	= false;
-    
+
     SSLServerSocket mSSLServerSocket = null;
+
+    ExecutorService mThreadPool;
     
     public HTTPSServer(int port){
         super(port);
@@ -34,12 +45,20 @@ public abstract class HTTPSServer extends Server implements Runnable {
     public void shutdown() {
     	try {
     		mShutdown = true;
-			
+
     		if(mSSLServerSocket != null) {
     			mSSLServerSocket.close();
     		}
 		} catch (IOException e) {
 			e.printStackTrace();
+		}
+
+		if(mThreadPool != null) {
+			mThreadPool.shutdown();
+			try {
+				mThreadPool.awaitTermination(5, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {}
+			mThreadPool.shutdownNow();
 		}
     }
     
@@ -86,19 +105,21 @@ public abstract class HTTPSServer extends Server implements Runnable {
             // Create server socket
             mSSLServerSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(this.mPort);
              
+            //Thread pool instead of unbounded thread creation
+            //Пул потоков вместо неограниченного создания потоков
+            mThreadPool = Executors.newFixedThreadPool(MAX_HANDLER_THREADS);
+
             MinimaLogger.log("SSL server started on port "+mPort);
             while(!mShutdown){
-                
+
             	//Get the socket
             	SSLSocket sslSocket = (SSLSocket) mSSLServerSocket.accept();
-                
+
             	//Get the Handler..
 				Runnable handler = getSocketHandler(sslSocket);
-				
-				//Run in a new Thread
-				Thread rpcthread = new Thread(handler, "Socket Handler @ "+getPort());
-				rpcthread.setDaemon(true);
-				rpcthread.start();
+
+				//Run in thread pool instead of creating new thread each time
+				mThreadPool.execute(handler);
             }
         
         } catch (BindException e) {

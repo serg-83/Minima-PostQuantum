@@ -13,8 +13,14 @@ import org.minima.utils.Streamable;
 
 public class Pulse implements Streamable {
 
-	public static MiniNumber PULSE_VERSION = MiniNumber.ONE; 
-	
+	public static MiniNumber PULSE_VERSION = MiniNumber.ONE;
+
+	/**
+	 * Max blocks in a pulse to prevent memory exhaustion from malicious data
+	 * Максимум блоков в pulse для защиты от переполнения памяти
+	 */
+	public static final int MAX_PULSE_BLOCKS = 2048;
+
 	/**
 	 * A list of the latest block hashes ( not all - just the last 60 minutes )
 	 */
@@ -60,6 +66,9 @@ public class Pulse implements Streamable {
 		}
 		
 		int len = MiniNumber.ReadFromStream(zIn).getAsInt();
+		if(len > MAX_PULSE_BLOCKS) {
+			throw new IOException("Pulse block list length "+len+" exceeds max "+MAX_PULSE_BLOCKS);
+		}
 		for(int i=0;i<len;i++) {
 			MiniData block = MiniData.ReadFromStream(zIn);
 			mBlockList.add(block);

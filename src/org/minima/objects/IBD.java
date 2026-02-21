@@ -24,9 +24,15 @@ import org.minima.utils.Streamable;
 public class IBD implements Streamable {
 
 	/**
-	 * Maximum numbver of cblocks in an IBD
+	 * Maximum number of blocks in an IBD
 	 */
 	public static final MiniNumber MAX_BLOCKS_FOR_IBD = new MiniNumber(34000);
+
+	/**
+	 * Max TxBlocks when reading from stream to prevent memory exhaustion
+	 * Максимум TxBlock'ов при чтении из потока для защиты от атак переполнения памяти
+	 */
+	public static final int MAX_IBD_TXBLOCKS_READ = 40000;
 	
 	/**
 	 * The back end Cascade - only sent for a new user - can be null
@@ -524,6 +530,9 @@ public class IBD implements Streamable {
 		//And now all the sync blocks
 		mTxBlocks = new ArrayList<>();
 		int len = MiniNumber.ReadFromStream(zIn).getAsInt();
+		if(len > MAX_IBD_TXBLOCKS_READ) {
+			throw new IOException("IBD TxBlocks count "+len+" exceeds max "+MAX_IBD_TXBLOCKS_READ);
+		}
 		for(int i=0;i<len;i++) {
 			mTxBlocks.add(TxBlock.ReadFromStream(zIn));
 		}

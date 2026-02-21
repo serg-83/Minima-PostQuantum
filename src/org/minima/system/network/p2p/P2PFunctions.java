@@ -76,21 +76,26 @@ public class P2PFunctions {
     
     /**
      * An array of invalid IPs that you should not connect to..
+     * Thread-safe Set with size limit to prevent unbounded growth
+     * Потокобезопасный Set с лимитом размера для защиты от неограниченного роста
      */
-    public static HashSet<String> mInvalidPeers = new HashSet<>();
+    private static final int MAX_INVALID_PEERS = 10000;
+    public static java.util.Set<String> mInvalidPeers = java.util.concurrent.ConcurrentHashMap.newKeySet();
     public static void addInvalidPeer(String zHostPost) {
     	if(!mInvalidPeers.contains(zHostPost)) {
+    		//Clear if too large / Очищаем при переполнении
+    		if(mInvalidPeers.size() >= MAX_INVALID_PEERS) {
+    			mInvalidPeers.clear();
+    		}
     		MinimaLogger.log("INVALID PEER added to List! "+zHostPost);
     		mInvalidPeers.add(zHostPost);
-    	}else {
-    		//MinimaLogger.log("INVALID PEER already added to list.. "+zHostPost);
     	}
     }
-    
+
     public static boolean isInvalidPeer(String zHostPost) {
     	return mInvalidPeers.contains(zHostPost);
     }
-    
+
     //Call this every 24 hours or so..
     public static void clearInvalidPeers() {
     	mInvalidPeers.clear();

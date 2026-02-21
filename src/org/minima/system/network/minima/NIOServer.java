@@ -28,6 +28,12 @@ public class NIOServer implements Runnable {
 	 */
 	public static final int MAX_CONNECTIONS_PER_IP = 3;
 
+	/**
+	 * Max total connections to prevent resource exhaustion
+	 * Максимум общих соединений для защиты от исчерпания ресурсов
+	 */
+	public static final int MAX_TOTAL_CONNECTIONS = 256;
+
 	MessageProcessor mNIOManager;
 
 	int mPort;
@@ -313,6 +319,14 @@ public class NIOServer implements Runnable {
 	private void addChannel(boolean zIncoming, SocketChannel zSocketChannel) throws IOException {
 		// You can get the IPV6  Address (if available) of the connected user like so:
         String ipAddress = zSocketChannel.socket().getInetAddress().getHostAddress();
+
+        //Check global connection limit first
+        //Проверяем глобальный лимит соединений
+        if(zIncoming && mClients.size() >= MAX_TOTAL_CONNECTIONS) {
+        	MinimaLogger.log("[NIOServer] Rejecting connection from "+ipAddress+" — global limit reached ("+mClients.size()+"/"+MAX_TOTAL_CONNECTIONS+")");
+        	zSocketChannel.close();
+        	return;
+        }
 
         //Check per-IP connection limit — reject if too many from same IP
         //Проверяем лимит соединений с одного IP — отклоняем если слишком много

@@ -5,7 +5,7 @@ import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
-import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Date;
 
 import org.minima.objects.base.MiniData;
@@ -29,9 +29,16 @@ public class NIOClient {
 	public static final int MAX_NIO_BUFFERS = 8 * 1024;
 
 	/**
-	 * The Maximum size of a single message 256MB
+	 * The Maximum size of a single message 32MB (reduced from 256MB)
+	 * Максимальный размер одного сообщения 32МБ (уменьшен с 256МБ)
 	 */
-	public static final int MAX_MESSAGE 	= 256 * 1024 * 1024;
+	public static final int MAX_MESSAGE 	= 32 * 1024 * 1024;
+
+	/**
+	 * Max pending outgoing messages per client to prevent memory exhaustion
+	 * Максимум ожидающих исходящих сообщений на клиента для защиты от переполнения памяти
+	 */
+	public static final int MAX_PENDING_MESSAGES = 128;
 	
 	String mUID;
 	
@@ -59,7 +66,7 @@ public class NIOClient {
 	
 	boolean mIncoming;
 	
-	private ArrayList<MiniData> mMessages;
+	private ArrayDeque<MiniData> mMessages;
 	
 	NIOManager mNIOManager;
 	
@@ -112,8 +119,8 @@ public class NIOClient {
         //Create the Read array
         mReadByteArrayTemp = new byte[MAX_NIO_BUFFERS];
         
-        //Writing
-        mMessages 				= new ArrayList<>();
+        //Writing — ArrayDeque for O(1) pollFirst instead of ArrayList.remove(0) O(n)
+        mMessages 				= new ArrayDeque<>();
         
     	mNIOManager = Main.getInstance().getNetworkManager().getNIOManager();
     	
@@ -284,11 +291,16 @@ public class NIOClient {
 		mConnectAttempts = zConnectAttempts;
 	}
 	
-	public void sendData(MiniData zData) {
+	public void sendData(MiniData zData) throws IOException {
 		synchronized (mMessages) {
 			if(mKey.isValid()) {
+				//Check queue overflow — disconnect slow clients
+				//Проверка переполнения очереди — отключаем медленных клиентов
+				if(mMessages.size() >= MAX_PENDING_MESSAGES) {
+					throw new IOException("Outgoing message queue overflow ("+mMessages.size()+"/"+MAX_PENDING_MESSAGES+") for client "+mUID);
+				}
 				mMessages.add(zData);
-			
+
 				//And now say we want to write..
 				mKey.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
 				mKey.selector().wakeup();
@@ -298,18 +310,15 @@ public class NIOClient {
 	
 	private boolean isNextData() {
 		synchronized (mMessages) {
-			return mMessages.size()>0;
+			return !mMessages.isEmpty();
 		}
 	}
-	
+
 	private MiniData getNextData() {
 		synchronized (mMessages) {
-			if(mMessages.size()>0) {
-				return mMessages.remove(0);
-			}
+			//O(1) pollFirst instead of O(n) ArrayList.remove(0)
+			return mMessages.pollFirst();
 		}
-		
-		return  null;
 	}
 	
 	public void handleRead() throws IOException {

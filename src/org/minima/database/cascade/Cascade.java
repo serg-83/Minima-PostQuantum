@@ -19,6 +19,12 @@ import org.minima.utils.Streamable;
 
 public class Cascade implements Streamable {
 
+	/**
+	 * Max cascade length to prevent memory exhaustion from malicious data
+	 * Максимальная длина каскада для защиты от атак переполнения памяти
+	 */
+	public static final int MAX_CASCADE_LENGTH = 1024;
+
 	CascadeNode mTip = null;
 	
 	BigDecimal mTotalWeight = BigDecimal.ZERO;
@@ -203,7 +209,10 @@ public class Cascade implements Streamable {
 	public void readDataStream(DataInputStream zIn) throws IOException {
 		//How many nodes..
 		int len = MiniNumber.ReadFromStream(zIn).getAsInt();
-				
+		if(len > MAX_CASCADE_LENGTH) {
+			throw new IOException("Cascade length "+len+" exceeds max "+MAX_CASCADE_LENGTH);
+		}
+
 		//Load them all..
 		mTip 				= null;
 		mTotalWeight 		= BigDecimal.ZERO;

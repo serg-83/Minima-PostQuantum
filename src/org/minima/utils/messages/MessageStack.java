@@ -15,12 +15,18 @@ import org.minima.utils.MinimaLogger;
  *
  */
 public class MessageStack{
-    
+
+	/**
+	 * Max queue size to prevent unbounded memory growth under load
+	 * Максимальный размер очереди для предотвращения неограниченного роста памяти
+	 */
+	public static final int MAX_QUEUE_SIZE = 10000;
+
 	/**
 	 * All messages in this stack
 	 */
 	private LinkedList<Message> mMessages;
-	
+
 	/**
 	 * The LOCK Object
 	 */
@@ -48,9 +54,15 @@ public class MessageStack{
     public void PostMessage(Message zMessage){
     	//Multiple threads can call this..
     	synchronized(mMessages) {
-    		mMessages.add(zMessage);	
+    		//Drop oldest messages if queue is overloaded
+    		//Отбрасываем старые сообщения при перегрузке очереди
+    		if(mMessages.size() >= MAX_QUEUE_SIZE) {
+    			mMessages.removeFirst();
+    			MinimaLogger.log("[MessageStack] Queue overflow — dropped oldest message, size:"+MAX_QUEUE_SIZE);
+    		}
+    		mMessages.add(zMessage);
     	}
-    	
+
     	//There is something in the stack
         notifyLock();
     }
@@ -82,17 +94,14 @@ public class MessageStack{
      */
     protected Message getNextMessage(){
     	Message nxtmsg = null;
-    	
+
     	synchronized (mMessages) {
     		if(!mMessages.isEmpty()){
-                //Get the first message
-                nxtmsg = mMessages.getFirst();
-                
-                //Remove it from the list
-                mMessages.remove(nxtmsg);
-    		}	
+                //Get and remove first in one O(1) operation
+                nxtmsg = mMessages.removeFirst();
+    		}
 		}
-    	
+
         return nxtmsg;
     }
     

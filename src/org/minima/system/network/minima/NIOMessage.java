@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.minima.database.MinimaDB;
@@ -50,19 +50,27 @@ import org.minima.utils.messages.TimerMessage;
 public class NIOMessage implements Runnable {
 
 	/**
+	 * Max entries for static connection-tracking collections to prevent memory leaks
+	 * Максимум записей в статических коллекциях для предотвращения утечек памяти
+	 */
+	private static final int MAX_STATIC_COLLECTION_SIZE = 1000;
+
+	/**
 	 * What was the last sync block requested..
 	 */
-	public static ConcurrentHashMap<String, MiniNumber> mlastSyncReq = new ConcurrentHashMap<>(); 
-	
+	public static ConcurrentHashMap<String, MiniNumber> mlastSyncReq = new ConcurrentHashMap<>();
+
 	/**
 	 * When was the last time you tried a chain sync..
 	 */
 	public static ConcurrentHashMap<String, Long> mLastChainSync = new ConcurrentHashMap<>();
-	
+
 	/**
-	 * Have we sent an IBD in the last 30 mins..  
+	 * Have we sent an IBD in the last 30 mins..
+	 * Thread-safe Set (was plain HashSet — race condition with 4 thread pool)
+	 * Потокобезопасный Set (был обычный HashSet — гонка данных с 4 потоками)
 	 */
-	public static HashSet<String> mHaveSentIBDRecently = new HashSet<>(); 
+	public static Set<String> mHaveSentIBDRecently = ConcurrentHashMap.newKeySet();
 	
 	/**
 	 * Base Message types sent over the network
@@ -103,6 +111,12 @@ public class NIOMessage implements Runnable {
 	 * Сжатое сообщение — содержит GZIP-сжатое оригинальное сообщение
 	 */
 	public static final MiniByte MSG_COMPRESSED 		= new MiniByte(99);
+
+	/**
+	 * Max decompressed size to prevent GZIP bomb attacks (64MB)
+	 * Максимальный размер распакованных данных для защиты от GZIP-бомб (64МБ)
+	 */
+	public static final int MAX_DECOMPRESSED_SIZE = 64 * 1024 * 1024;
 	
 	/**
 	 * Helper function that converts to String 
@@ -242,13 +256,20 @@ public class NIOMessage implements Runnable {
 				MiniData compressedData = MiniData.ReadFromStream(dis);
 				byte[] compBytes = compressedData.getBytes();
 
-				//Decompress via GZIP
+				//Decompress via GZIP with size limit to prevent GZIP bomb
+				//Распаковка GZIP с лимитом размера для защиты от GZIP-бомб
 				ByteArrayInputStream compBais = new ByteArrayInputStream(compBytes);
 				GZIPInputStream gzis = new GZIPInputStream(compBais);
 				ByteArrayOutputStream decompBaos = new ByteArrayOutputStream();
 				byte[] buffer = new byte[8192];
 				int len;
+				int totalRead = 0;
 				while((len = gzis.read(buffer)) != -1) {
+					totalRead += len;
+					if(totalRead > MAX_DECOMPRESSED_SIZE) {
+						gzis.close();
+						throw new IOException("GZIP decompression exceeds max size limit: "+MAX_DECOMPRESSED_SIZE+" bytes");
+					}
 					decompBaos.write(buffer, 0, len);
 				}
 				gzis.close();
@@ -434,9 +455,14 @@ public class NIOMessage implements Runnable {
 				String miniaddress = nioclient.getFullMinimaAddress();
 				if(mHaveSentIBDRecently.contains(miniaddress)) {
 					MinimaLogger.log("Already sent an IBD to "+miniaddress+" in last 30 mins..");
-					
+
 				}else {
-					
+
+					//Clear if too large to prevent memory leak / Очищаем при переполнении
+					if(mHaveSentIBDRecently.size() >= MAX_STATIC_COLLECTION_SIZE) {
+						mHaveSentIBDRecently.clear();
+					}
+
 					//Add to our list
 					mHaveSentIBDRecently.add(miniaddress);
 					
@@ -809,6 +835,10 @@ public class NIOMessage implements Runnable {
 					if(reqtimediff < 1000 * 60 * 10) {
 						return;
 					}
+					//Evict if too large / Очищаем при переполнении
+					if(mLastChainSync.size() >= MAX_STATIC_COLLECTION_SIZE) {
+						mLastChainSync.clear();
+					}
 					mLastChainSync.put(mClientUID, Long.valueOf(reqtimenow));
 					
 					counter = 0;
@@ -1171,6 +1201,10 @@ public class NIOMessage implements Runnable {
 						MinimaLogger.log("[+] Received SAME Sync IBD Request from "+mClientUID+" @ "+lastblock.getBlockNumber()+" IGNORING");
 						return;
 					}
+				}
+				//Evict if too large / Очищаем при переполнении
+				if(mlastSyncReq.size() >= MAX_STATIC_COLLECTION_SIZE) {
+					mlastSyncReq.clear();
 				}
 				mlastSyncReq.put(mClientUID, lastblock.getBlockNumber());
 				
