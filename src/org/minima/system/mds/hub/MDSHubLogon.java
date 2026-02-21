@@ -2,6 +2,36 @@ package org.minima.system.mds.hub;
 
 public class MDSHubLogon {
 
+	/**
+	 * Page shown when IP is blocked after too many failed login attempts
+	 * Страница при блокировке IP после слишком многих неудачных попыток входа
+	 */
+	public static String createBlockedPage() {
+
+		String page = MDSUtil.HUB_START;
+
+		page += MDSUtil.returnLogonHeader();
+
+		page +=
+		"<center>"
+		+ "<div class='mainlogon'>\n"
+		+ "	<h2>Access Blocked</h2>\n"
+		+ "	<br>\n"
+		+ "	<p style='color:#ff6666;font-size:16px;'>Too many failed login attempts.<br>"
+		+ " Your IP is blocked for <b>3 minutes</b>.</p>\n"
+		+ "	<br>\n"
+		+ "	<p style='color:#aaa;font-size:13px;'>Слишком много неудачных попыток входа.<br>"
+		+ " Ваш IP заблокирован на <b>3 минуты</b>.</p>\n"
+		+ "	<br><br>\n"
+		+ "	<a class='logonbutton' href='index.html' style='text-decoration:none;'>Try Again</a>\n"
+		+ "</div>"
+		+ "</center>";
+
+		page += MDSUtil.HUB_END;
+
+		return page;
+	}
+
 	public static String createHubPage(String zLoginID) {
 		
 		//Start the HTML

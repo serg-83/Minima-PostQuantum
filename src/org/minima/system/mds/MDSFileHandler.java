@@ -23,6 +23,7 @@ import javax.net.ssl.SSLHandshakeException;
 import org.minima.database.MinimaDB;
 import org.minima.objects.base.MiniString;
 import org.minima.system.Main;
+import org.minima.system.mds.hub.MDSHubLogon;
 import org.minima.system.mds.multipart.MultipartData;
 import org.minima.system.mds.multipart.MultipartParser;
 import org.minima.system.mds.polling.PollStack;
@@ -257,17 +258,33 @@ public class MDSFileHandler implements Runnable {
 				writeHTMLResouceFile(dos, "hublogin/index.html");
 				
 			}else if(fileRequested.startsWith("login.html")){
-				
+
+				//Get client IP for brute-force protection
+				//Получаем IP клиента для защиты от перебора
+				String clientIP = mSocket.getInetAddress().getHostAddress();
+
+				//Check if IP is blocked / Проверяем заблокирован ли IP
+				if(mMDS.isIPBlocked(clientIP)) {
+					writeHTMLPage(dos, MDSHubLogon.createBlockedPage());
+					return;
+				}
+
 				//Check the password
 				Map params = getPostParams(allheaders, bufferedReader);
-				
+
 				//Check the Password..
 				String password = "";
 				if(params.containsKey("password")) {
 					password = params.get("password").toString();
 				}
-				
-				if(!mMDS.checkMiniHUBPasword(password)) {
+
+				if(!mMDS.checkMiniHUBPasword(password, clientIP)) {
+					//Check if now blocked after this failed attempt
+					//Проверяем не заблокирован ли IP после этой неудачной попытки
+					if(mMDS.isIPBlocked(clientIP)) {
+						writeHTMLPage(dos, MDSHubLogon.createBlockedPage());
+						return;
+					}
 					throw new IllegalArgumentException("Incorrect MDS Password");
 				}
 				

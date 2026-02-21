@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Hashtable;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.net.ssl.SSLSocket;
 
@@ -91,6 +92,16 @@ public class MDSManager extends MessageProcessor {
 	 * The BASE MiniDAPP Password for the MiniHUB
 	 */
 	String mMiniHUBPassword = null;
+
+	/**
+	 * Brute-force protection: track failed login attempts per IP
+	 * Защита от перебора: отслеживание неудачных попыток входа по IP
+	 * long[0] = failed attempt count, long[1] = timestamp of last failed attempt
+	 */
+	private static final int MAX_LOGIN_ATTEMPTS = 3;
+	private static final long LOCKOUT_DURATION_MS = 3 * 60 * 1000; // 3 minutes / 3 минуты
+	private static final int MAX_TRACKED_IPS = 10000;
+	private ConcurrentHashMap<String, long[]> mLoginAttempts = new ConcurrentHashMap<>();
 	
 	/**
 	 * All the current Contexts
@@ -265,26 +276,88 @@ public class MDSManager extends MessageProcessor {
 	}
 	
 	/**
-	 * One check at a time
-	 * @throws InterruptedException 
+	 * Check if an IP is blocked due to too many failed login attempts
+	 * Проверяем заблокирован ли IP из-за слишком многих неудачных попыток входа
 	 */
-	public synchronized boolean checkMiniHUBPasword(String zPassword) throws InterruptedException {
-		
-		if(GeneralParams.MDS_PASSWORD.equals("")) {
-			boolean valid = mMiniHUBPassword.replace("-", "").equalsIgnoreCase(zPassword.replace("-", "").trim());
-			if(!valid) {
-				//PAUSE - this prevents fast checking of passwords
-				Thread.sleep(1000);
+	public boolean isIPBlocked(String zIP) {
+		long[] attempts = mLoginAttempts.get(zIP);
+		if(attempts == null) {
+			return false;
+		}
+		//Check if locked out and lockout period hasn't expired
+		if(attempts[0] >= MAX_LOGIN_ATTEMPTS) {
+			long elapsed = System.currentTimeMillis() - attempts[1];
+			if(elapsed < LOCKOUT_DURATION_MS) {
+				return true;
 			}
-			
-			return valid;
+			//Lockout expired — reset / Блокировка истекла — сбрасываем
+			mLoginAttempts.remove(zIP);
 		}
-		
-		boolean valid = mMiniHUBPassword.equals(zPassword.trim());
-		if(!valid) {
+		return false;
+	}
+
+	/**
+	 * Record a failed login attempt for an IP
+	 * Записываем неудачную попытку входа для IP
+	 */
+	private void recordFailedLogin(String zIP) {
+		//Evict if too many tracked IPs / Очищаем если слишком много отслеживаемых IP
+		if(mLoginAttempts.size() >= MAX_TRACKED_IPS) {
+			mLoginAttempts.clear();
+		}
+		long[] attempts = mLoginAttempts.get(zIP);
+		if(attempts == null) {
+			attempts = new long[]{1, System.currentTimeMillis()};
+		} else {
+			attempts[0]++;
+			attempts[1] = System.currentTimeMillis();
+		}
+		mLoginAttempts.put(zIP, attempts);
+
+		if(attempts[0] >= MAX_LOGIN_ATTEMPTS) {
+			MinimaLogger.log("[MDS] IP "+zIP+" blocked for 3 minutes after "+attempts[0]+" failed login attempts");
+		}
+	}
+
+	/**
+	 * Reset login attempts after successful login
+	 * Сбрасываем счётчик попыток после успешного входа
+	 */
+	private void resetLoginAttempts(String zIP) {
+		mLoginAttempts.remove(zIP);
+	}
+
+	/**
+	 * One check at a time — with brute-force protection per IP
+	 * Проверка пароля с защитой от перебора по IP
+	 * @throws InterruptedException
+	 */
+	public synchronized boolean checkMiniHUBPasword(String zPassword, String zIP) throws InterruptedException {
+
+		//Check if this IP is blocked / Проверяем заблокирован ли IP
+		if(isIPBlocked(zIP)) {
+			MinimaLogger.log("[MDS] Login attempt from blocked IP: "+zIP);
 			Thread.sleep(1000);
+			return false;
 		}
-		
+
+		boolean valid;
+		if(GeneralParams.MDS_PASSWORD.equals("")) {
+			valid = mMiniHUBPassword.replace("-", "").equalsIgnoreCase(zPassword.replace("-", "").trim());
+		} else {
+			valid = mMiniHUBPassword.equals(zPassword.trim());
+		}
+
+		if(!valid) {
+			//Record failed attempt / Записываем неудачную попытку
+			recordFailedLogin(zIP);
+			//PAUSE - this prevents fast checking of passwords
+			Thread.sleep(1000);
+		} else {
+			//Success — reset attempts / Успех — сбрасываем счётчик
+			resetLoginAttempts(zIP);
+		}
+
 		return valid;
 	}
 	
