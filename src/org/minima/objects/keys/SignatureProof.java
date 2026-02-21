@@ -66,6 +66,11 @@ public class SignatureProof implements Streamable {
 	}
 
 	public MiniData getRootPublicKey(){
+		// SPHINCS+ не использует дерево MMR — публичный ключ = root key напрямую
+		if (mSchemeType == SigningScheme.SCHEME_SPHINCS) {
+			return mPublicKey;
+		}
+		// Winternitz: вычисляем root через MMR proof
 		MMRData pubentry = MMRData.CreateMMRDataLeafNode(mPublicKey, MiniNumber.ZERO);
 		return mProof.calculateProof(pubentry).getData();
 	}
